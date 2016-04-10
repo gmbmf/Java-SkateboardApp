@@ -24,11 +24,13 @@ public class SkateboardAppComp extends JFrame {
     private JButton         purchaseButton; // To calculate the cost
     private JButton         exitButton;     // To exit the application
 
-    protected Elements      elements;
+    protected Elements      mainElements;
 
     protected JFrame        thisFrame;
-    int                     windLeft;
-    int                     windTop;
+    protected int           windLeft;
+    protected int           windTop;
+
+    private Debug           debug;
 
     /**
         Constructor
@@ -36,7 +38,10 @@ public class SkateboardAppComp extends JFrame {
 
     public SkateboardAppComp() {
         thisFrame = this;
-        elements = new Elements();
+        mainElements = new Elements();
+
+        // FIXME: DEBUG
+        debug = new Debug();
 
         // Display a title.
         setTitle("Order Taker");
@@ -121,16 +126,41 @@ public class SkateboardAppComp extends JFrame {
 
     private class PurchaseButtonListener implements ActionListener {
         public void actionPerformed(ActionEvent e) {
+            final String[]  TAG_PREFIXES = {
+                "Deck", "Trucks", "Wheels", "Accessory"
+            };
             // Variables to hold the subtotal, sales tax, and total
-            double  salesTax;
-            double  subtotal;
-            double  total;
+            double          salesTax;
+            double          subtotal    = 0.00;
+            double          total;
 
-            // Calculate the subtotal.
-            subtotal = deckPanel.getDeckCost() + 
-                       trucksPanel.getTrucksCost() +
-                       wheelsPanel.getWheelsCost() +
-                       accessoryPanel.getAccessoryCost();
+            for (String tagPref : TAG_PREFIXES) {
+                String      tag         = tagPref + "List";
+                Element     listElem    = mainElements.getByTag(tag);
+
+                if (listElem != null) {
+                    JList<?>    list                = listElem.list;
+                    double[]    prices              = listElem.getPrices();
+                    // Determine which items were selected.
+                    int[]       selectionIndices;
+
+                    System.out.println("found tag '" + tag + "'");
+                    if (list.isSelectionEmpty()) {
+                        debug.println(tag + ": NONE");
+                        list.setSelectedIndex(0);
+                    }
+
+                    // Determine which items were selected.
+                    selectionIndices = list.getSelectedIndices();
+
+                    for (int index : selectionIndices) {
+                        System.out.println(tag + ": selected index: " + index);
+                        System.out.println(tag + ": price is $" +
+                                           prices[index]);
+                        subtotal += prices[index];
+                    }
+                }
+            }
 
             if (subtotal == 0) {
                 // Tell the user to select something.
@@ -179,34 +209,47 @@ public class SkateboardAppComp extends JFrame {
         public Elements() {
         }
 
-        public void addElement(Element elem) {
+        public void add(Element elem) {
             elements.add(elem);
+        }
+
+        public Element getByTag(String tag) {
+            for (Element elem : elements) {
+                if (elem.tag.equals(tag))
+                    return elem;
+            }
+
+            return null;
         }
     }
 
     public static class Element {
         private JButton         button;
         private JLabel          label;
-        private JList<String>   list;
+        private JList<?>        list;
+        private double[]        prices;
         private String          tag;
-        private String[]        texts;
         private ElemType        type;
 
-        public Element(ElemType type, Object elemObj, JPanel panel,
-                       String tag) {
+        public Element(ElemType type, String tag, Object elemObj,
+                       JPanel panel) {
             this.type   = type;
             this.tag    = tag;
+
+            prices = new double[1];
 
             switch(type) {
                 case LABEL:
                     label = (JLabel) elemObj;
                     panel.add(label);
+                    prices[0] = 0.00;
                     break;
                 case LIST:
-                    if (elemObj instanceof JList) {
-                        JList<String> list = (JList<String>) elemObj;
+                    if (elemObj instanceof JList<?>) {
+                        list = (JList<?>) elemObj;
                         panel.add(list);
                     }
+                    prices[0] = 0.00;
                     break;
                 default:
                     break;
@@ -218,22 +261,36 @@ public class SkateboardAppComp extends JFrame {
             this.type   = type;
             this.tag    = tag;
 
+            prices = new double[1];
+
             switch(type) {
                 case BUTTON:
                     button = (JButton) elemObj;
                     button.addActionListener(listener);
                     panel.add(button);
+                    prices[0] = 0.00;
+                    break;
                 case LABEL:
                     label = (JLabel) elemObj;
                     panel.add(label);
+                    prices[0] = 0.00;
                     break;
                 case LIST:
-                    list = (JList<String>) elemObj;
+                    list = (JList<?>) elemObj;
                     panel.add(list);
+                    prices[0] = 0.00;
                     break;
                 default:
                     break;
             }
+        }
+
+        public double[] getPrices() {
+            return prices;
+        }
+
+        public void setPrices(double[] prices) {
+            this.prices = prices;
         }
     }
 
@@ -485,9 +542,8 @@ public class SkateboardAppComp extends JFrame {
             titleLabel.setForeground(LABEL_COLOR);
 
             // Add the label to this panel.
-            //add(titleLabel);
-            elements.addElement(new Element(ElemType.LABEL, titleLabel,
-                                            this, "Title"));
+            mainElements.add(new Element(ElemType.LABEL, "TitleLabel",
+                                         titleLabel, this));
         }
     }
 
@@ -507,8 +563,6 @@ public class SkateboardAppComp extends JFrame {
             0.00, 60.00, 45.00, 50.00
         };
 
-        private Debug           debug;
-
         // The deck list to be added to the panel.
         private JList<String>   deckList;
 
@@ -517,8 +571,7 @@ public class SkateboardAppComp extends JFrame {
          */
 
         public DeckPanel() {
-            // FIXME: DEBUG
-            debug = new Debug();
+            Element     element;
 
             setPreferredSize(new Dimension(120, 120));
 
@@ -536,51 +589,13 @@ public class SkateboardAppComp extends JFrame {
             // Add a 'Decks' border around the panel.
             setBorder(BorderFactory.createTitledBorder(PANEL_TITLE));
 
-            // Add the deck list to the panel.
-            add(deckList);
+            element = new Element(ElemType.LIST, "DeckList", deckList, this);
+            element.setPrices(PART_PRICES);
+            mainElements.add(element);
         }
 
         public void clearSelection() {
             deckList.setSelectedIndex(0);
-        }
-
-        /**
-         *  getDeckCost method:
-         *  This method returns the cost of the selected deck.
-         */
-
-        public double getDeckCost() {
-            // The following variable will hold the cost
-            // of the selected deck.
-            double  deckCost        = 0.0;
-
-            // Protect against crashing due to the user clearing all
-            // selections.
-            if (deckList.isSelectionEmpty()) {
-                //System.out.println("DEBUG: deck: NONE");
-                debug.println("deck: NONE");
-                deckList.setSelectedIndex(0);
-            }
-
-            // Determine which deck was selected.
-            Object  selection       = deckList.getSelectedValue();
-            String  selectionStr    = selection.toString();
-
-            //System.out.println("DEBUG: deck: " + selection.toString());
-            debug.println("deck: " + selection.toString());
-
-            // Determine the price of this deck.
-            for (int index = 0; index < PART_NAMES.length; index++) {
-                if (PART_NAMES[index] == selectionStr) {
-                    deckCost = PART_PRICES[index];
-                    //System.out.println("DEBUG: price: $" + price);
-                    debug.println("price: $" + deckCost);
-                    break;
-                }
-            }
-
-            // Return the cost of the selected deck.
-            return deckCost;
         }
     }
 
@@ -601,9 +616,6 @@ public class SkateboardAppComp extends JFrame {
             0.00, 35.00, 40.00, 45.00
         };
 
-        // FIXME: DEBUG
-        private Debug           debug;
-
         // The trucks list to be added to the panel.
         private JList<String>   trucksList;
         
@@ -612,7 +624,7 @@ public class SkateboardAppComp extends JFrame {
          */
 
         public TrucksPanel() {
-            debug = new Debug();
+            Element     element;
 
             setPreferredSize(new Dimension(80, 120));
 
@@ -625,48 +637,14 @@ public class SkateboardAppComp extends JFrame {
             // Add a 'Trucks' border around the panel.
             setBorder(BorderFactory.createTitledBorder("Trucks"));
 
-            // Add the trucks list to the panel.
-            add(trucksList);
+            element = new Element(ElemType.LIST, "TrucksList", trucksList,
+                                  this);
+            element.setPrices(PART_PRICES);
+            mainElements.add(element);
         }
 
         public void clearSelection() {
             trucksList.setSelectedIndex(0);
-        }
-
-        /**
-         *  getTrucksCost method:
-         *  This method returns the cost of the selected trucks assembly.
-         */
-
-        public double getTrucksCost() {
-            // The following variable will hold the cost
-            // of the selected trucks.
-            double  trucksCost      = 0.0;
-
-            // Protect against crashing due to the user clearing all
-            // selections.
-            if (trucksList.isSelectionEmpty()) {
-                debug.println("trucks: NONE");
-                trucksList.setSelectedIndex(0);
-            }
-
-            // Determine which trucks assembly was selected.
-            Object  selection       = trucksList.getSelectedValue();
-            String  selectionStr    = selection.toString();
-
-            debug.println("trucks: " + selection.toString());
-
-            // Determine the price of this deck.
-            for (int index = 0; index < PART_NAMES.length; index++) {
-                if (PART_NAMES[index] == selectionStr) {
-                    trucksCost = PART_PRICES[index];
-                    debug.println("price: $" + trucksCost);
-                    break;
-                }
-            }
-
-            // Return the cost of the selected trucks assembly.
-            return trucksCost;
         }
     }
 
@@ -684,9 +662,6 @@ public class SkateboardAppComp extends JFrame {
             0.00, 20.00, 22.00, 24.00, 28.00
         };
 
-        // FIXME: DEBUG
-        private Debug           debug;
-
         // The wheels list to be added to the panel.
         private JList<String>   wheelsList;
         
@@ -695,7 +670,7 @@ public class SkateboardAppComp extends JFrame {
          */
 
         public WheelsPanel() {
-            debug = new Debug();
+            Element     element;
 
             setPreferredSize(new Dimension(60, 120));
 
@@ -708,48 +683,14 @@ public class SkateboardAppComp extends JFrame {
             // Add a border around the panel.
             setBorder(BorderFactory.createTitledBorder("Wheels"));
 
-            // Add the wheels list to the panel.
-            add(wheelsList);
+            element = new Element(ElemType.LIST, "WheelsList", wheelsList,
+                                  this);
+            element.setPrices(PART_PRICES);
+            mainElements.add(element);
         }
 
         public void clearSelection() {
             wheelsList.setSelectedIndex(0);
-        }
-
-        /**
-         *  getWheelsCost method:
-         *  This method returns the cost of the selected set of wheels.
-         */
-
-        public double getWheelsCost() {
-            // The following variable will hold the cost of the selected set
-            // of wheels.
-            double  wheelsCost      = 0.0;
-
-            // Protect against crashing due to the user clearing all
-            // selections.
-            if (wheelsList.isSelectionEmpty()) {
-                debug.println("wheels: NONE");
-                wheelsList.setSelectedIndex(0);
-            }
-
-            // Determine which set of wheels was selected.
-            Object  selection       = wheelsList.getSelectedValue();
-            String  selectionStr    = selection.toString();
-
-            debug.println("wheels: " + selection.toString());
-
-            // Determine the price of this wheels set.
-            for (int index = 0; index < PART_NAMES.length; index++) {
-                if (PART_NAMES[index] == selectionStr) {
-                    wheelsCost = PART_PRICES[index];
-                    debug.println("price: $" + wheelsCost);
-                    break;
-                }
-            }
-
-            // Return the cost of the selected set of wheels.
-            return wheelsCost;
         }
     }
 
@@ -769,9 +710,6 @@ public class SkateboardAppComp extends JFrame {
             10.00, 30.00, 2.00, 3.00
         };
 
-        // FIXME: DEBUG
-        Debug                   debug;
-
         // The accessory list to be added to the panel.
         private JList<String>   accessoryList;
 
@@ -780,8 +718,7 @@ public class SkateboardAppComp extends JFrame {
          */
 
         public AccessoryPanel() {
-            // FIXME: temp
-            debug = new Debug();
+            Element     element;
 
             setPreferredSize(new Dimension(110, 120));  // FIXME
 
@@ -793,53 +730,15 @@ public class SkateboardAppComp extends JFrame {
             // Add an 'Accessories' border around the panel.
             setBorder(BorderFactory.createTitledBorder(PANEL_TITLE));
 
-            // Add the accessory list to the panel.
-            add(accessoryList);
+            element = new Element(ElemType.LIST, "AccessoryList",
+                                  accessoryList, this);
+            element.setPrices(PART_PRICES);
+            mainElements.add(element);
         }
 
         public void clearSelection() {
             // Clear all selected items.
             accessoryList.clearSelection();
-        }
-
-        /**
-         *  getAccessoryCost method:
-         * This method returns the cost of the selected accessories.
-         */
-
-        public double getAccessoryCost() {
-            // The following variable will hold the cost of the selected
-            // accessories.
-            double accessoryCost = 0.0;
-
-            if (accessoryList.isSelectionEmpty())
-                debug.println("accessory: NONE");
-
-            // Determine which accessories were selected, if any.
-            java.util.List selections = accessoryList.getSelectedValuesList();
-
-            // Process all of the accessories selected, if any.
-            for (Object selection : selections) {
-                double  price           = 0.00;
-                String  selectionStr    = selection.toString();
-
-                debug.println("accessory: " + selectionStr);
-
-                // Determine the price of this accessory.
-                for (int index = 0; index < PART_NAMES.length; index++) {
-                    if (PART_NAMES[index] == selectionStr) {
-                        price = PART_PRICES[index];
-                        debug.println("price: $" + price);
-                        break;
-                    }
-                }
-
-                // Add the price to the accessory cost total.
-                accessoryCost += price;
-            }
-
-            // Return the accessory cost.
-            return accessoryCost;
         }
     }
 
